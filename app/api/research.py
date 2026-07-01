@@ -1,14 +1,17 @@
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, HttpUrl
+from sqlalchemy.orm import Session
 
+from app.db.session import get_db_session
 from app.research.brief import DeterministicBriefGenerator
 from app.research.credibility import DeterministicCredibilityScorer
 from app.research.models import CredibilityAssessment, ResearchBrief, ResearchSource, SourceType
-from app.research.store import research_store
+from app.research.store import sqlalchemy_research_store
 
 router = APIRouter(prefix="/research", tags=["research"])
+DbSession = Depends(get_db_session)
 
 
 class CreateProjectRequest(BaseModel):
@@ -33,13 +36,17 @@ class AddSourceRequest(BaseModel):
 class AddSourceResponse(BaseModel):
     project_id: str
     source_id: str
+    created: bool
     source_count: int
     credibility: CredibilityAssessment
 
 
 @router.post("/projects", response_model=CreateProjectResponse, status_code=status.HTTP_201_CREATED)
-def create_project(request: CreateProjectRequest) -> CreateProjectResponse:
-    project = research_store.create_project(request.question)
+def create_project(
+    request: CreateProjectRequest,
+    session: Session = DbSession,
+) -> CreateProjectResponse:
+    project = sqlalchemy_research_store.create_project(session, request.question)
     return CreateProjectResponse(project_id=project.id, question=project.question)
 
 
@@ -48,7 +55,11 @@ def create_project(request: CreateProjectRequest) -> CreateProjectResponse:
     response_model=AddSourceResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def add_source(project_id: str, request: AddSourceRequest) -> AddSourceResponse:
+def add_source(
+    project_id: str,
+    request: AddSourceRequest,
+    session: Session = DbSession,
+) -> AddSourceResponse:
     source = ResearchSource(
         project_id=project_id,
         title=request.title,
@@ -59,19 +70,20 @@ def add_source(project_id: str, request: AddSourceRequest) -> AddSourceResponse:
         summary=request.summary,
         key_claims=request.key_claims,
     )
-    project = research_store.add_source(source)
-    credibility = DeterministicCredibilityScorer().assess(source)
+    result = sqlalchemy_research_store.add_source(session, source)
+    credibility = DeterministicCredibilityScorer().assess(result.source)
     return AddSourceResponse(
-        project_id=project.id,
-        source_id=source.id,
-        source_count=len(project.sources),
+        project_id=result.project.id,
+        source_id=result.source.id,
+        created=result.created,
+        source_count=len(result.project.sources),
         credibility=credibility,
     )
 
 
 @router.get("/projects/{project_id}/brief", response_model=ResearchBrief)
-def get_brief(project_id: str) -> ResearchBrief:
-    project = research_store.get(project_id)
+def get_brief(project_id: str, session: Session = DbSession) -> ResearchBrief:
+    project = sqlalchemy_research_store.get(session, project_id)
     if project is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

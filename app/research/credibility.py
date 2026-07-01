@@ -25,7 +25,10 @@ class DeterministicCredibilityScorer:
             reasons.append("Named author improves accountability.")
 
         if source.published_at:
-            age_days = (datetime.now(UTC) - source.published_at).days
+            published_at = source.published_at
+            if published_at.tzinfo is None:
+                published_at = published_at.replace(tzinfo=UTC)
+            age_days = (datetime.now(UTC) - published_at).days
             if age_days <= 730:
                 score += 0.12
                 reasons.append("Recent publication improves current relevance.")
