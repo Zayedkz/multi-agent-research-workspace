@@ -19,6 +19,7 @@
 
 - Create a research project.
 - Add sources to a project.
+- Deduplicate sources within a project by normalized URL or normalized title.
 - Capture URL, title, source type, author, publication date, summary, and key claims.
 - Score source credibility with transparent reasons.
 - Generate a brief with answer text, evidence cards, average credibility, and research gaps.
@@ -36,12 +37,12 @@
 Initial entities:
 
 - `research_projects`: ID, question, created timestamp.
-- `research_sources`: ID, project ID, title, URL, source type, author, publication date, summary, key claims, added timestamp.
+- `research_sources`: ID, project ID, title, normalized title, URL, normalized URL, source type, author, publication date, summary, key claims, added timestamp.
 - `credibility_assessments`: source ID, score, label, reasons, assessed timestamp.
 - `research_briefs`: project ID, answer, evidence cards, gaps, generated timestamp.
 - `agent_runs`: future workflow runs with role, status, attempts, input/output metadata, and timestamps.
 
-The first implementation stores projects in memory. PostgreSQL persistence is the next production step.
+The current implementation includes SQLAlchemy models and an Alembic migration for PostgreSQL. Local tests validate the same model behavior with SQLite.
 
 ## 6. API Design
 
@@ -49,7 +50,7 @@ Initial endpoints:
 
 - `GET /health`: service health and environment.
 - `POST /research/projects`: create a research project.
-- `POST /research/projects/{project_id}/sources`: add a source and return credibility assessment.
+- `POST /research/projects/{project_id}/sources`: add or deduplicate a source and return credibility assessment.
 - `GET /research/projects/{project_id}/brief`: generate a deterministic cited brief.
 
 Planned endpoints:
@@ -80,6 +81,7 @@ The first implementation covers steps 3 and 4 deterministically and leaves exter
 ## 9. Reliability Strategy
 
 - Persist source records before launching async verification or synthesis.
+- Deduplicate source submissions before generating credibility assessments.
 - Make agent runs idempotent by project ID, role, and input hash.
 - Store prompt/model/provider metadata for reproducibility.
 - Keep deterministic fallback scoring available when external providers fail.
@@ -103,14 +105,13 @@ The first implementation covers steps 3 and 4 deterministically and leaves exter
 ## 12. Tradeoffs
 
 - Deterministic scoring is simple and reproducible, but it cannot fully judge source quality.
-- In-memory storage makes the scaffold fast to test but is not deployable.
+- SQLite-backed tests keep persistence behavior deterministic without requiring Docker.
 - FastAPI keeps the service compact; a later frontend can consume the same API.
 - Multi-agent orchestration is deferred until the core source/evidence model is stable.
 
 ## 13. Future Improvements
 
-- PostgreSQL persistence and migrations.
-- Source deduplication.
+- Project-level source review status.
 - Search provider connectors.
 - Async multi-agent workflow engine.
 - LLM synthesis constrained to evidence cards.

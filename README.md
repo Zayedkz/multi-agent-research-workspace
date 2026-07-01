@@ -31,6 +31,8 @@ flowchart LR
 - Health endpoint
 - Research project creation
 - Source collection with title, URL, type, author, publication date, summary, and key claims
+- SQLAlchemy persistence models and Alembic migration for projects and sources
+- Per-project source deduplication by normalized URL or normalized title
 - Deterministic credibility scoring
 - Evidence cards with source references and scores
 - Cited preliminary brief generation
@@ -44,9 +46,11 @@ flowchart LR
 - Python 3.12
 - FastAPI
 - Pydantic Settings
+- SQLAlchemy
+- Alembic
 - pytest
 - Ruff
-- PostgreSQL planned
+- PostgreSQL
 - Redis planned
 - Optional LLM/search providers planned
 
@@ -67,6 +71,14 @@ Start local infrastructure once Docker is available:
 ```bash
 docker compose up -d
 ```
+
+Run migrations after PostgreSQL is available:
+
+```bash
+alembic upgrade head
+```
+
+Local tests use SQLite so Docker is not required for validation.
 
 ## Environment Variables
 
@@ -119,6 +131,12 @@ ruff check .
 pytest
 ```
 
+## Persistence And Deduplication
+
+Research projects and sources are stored through SQLAlchemy models. The first migration creates `research_projects` and `research_sources` with uniqueness constraints for each project's normalized source URL and normalized source title.
+
+When a duplicate source is submitted, the API returns the existing source ID with `created: false` instead of creating a second record. URL normalization lowercases the host, removes fragments, trims trailing slashes, sorts query parameters, and ignores `utm_*` tracking parameters.
+
 ## Future Agent Roles
 
 - **Search Agent:** finds candidate sources for a research question.
@@ -130,6 +148,7 @@ pytest
 ## Reliability Considerations
 
 - Briefs should remain reproducible from stored sources and claims.
+- Duplicate submissions should return the existing source instead of creating conflicting evidence.
 - Agent-generated conclusions should cite evidence cards.
 - Missing publication dates and weak source types should surface as research gaps.
 - Future search/model failures should not corrupt saved source records.
@@ -145,8 +164,7 @@ pytest
 
 ## Future Improvements
 
-- PostgreSQL persistence and migrations
-- Source deduplication and project-level source status
+- Project-level source status
 - Search provider abstraction
 - Async agent queue for search, verification, synthesis, critique, and citations
 - LLM synthesis constrained to evidence cards
