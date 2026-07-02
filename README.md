@@ -1,46 +1,67 @@
 # Multi-Agent Research Workspace
 
-Multi-Agent Research Workspace is an AI-ready research application for creating research questions, collecting sources, scoring source credibility, and generating cited preliminary briefs.
+AI-ready research workspace for collecting sources, reviewing evidence quality, and generating cited preliminary briefs. It gives researchers a structured place to move from scattered links and notes into auditable evidence cards.
 
-The first implementation is deterministic and local. It does not call search engines or paid model APIs yet; instead, it establishes the core product workflow and domain boundaries that future researcher, verifier, synthesizer, and citation agents can use.
+This project is built as an engineering portfolio piece for AI product, research tooling, and multi-agent workflow roles. It demonstrates the backend foundation for search, verification, synthesis, critique, and citation agents before connecting external search or paid model APIs.
 
-## Problem Statement
+## Why This Exists
 
-Research workflows often collapse into scattered tabs, notes, and uncited summaries. A useful AI research workspace needs source provenance, credibility signals, explicit evidence, and gap tracking before it can responsibly synthesize conclusions. This project demonstrates that workflow in a testable, extensible service.
+Research workflows often collapse into browser tabs, pasted notes, and summaries that are hard to verify later. A useful AI research system needs provenance, source review, credibility signals, evidence gaps, and reproducible synthesis before it can responsibly automate the research loop.
+
+This repo focuses on that foundation:
+
+- research project creation around a concrete question
+- source intake with provenance and key claims
+- per-project deduplication by normalized URL or title
+- source review statuses for candidate, verified, rejected, and needs-review material
+- deterministic credibility scoring with transparent reasons
+- cited preliminary briefs generated from usable evidence
+- database-backed persistence with CI-friendly local tests
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    User[Researcher] --> API[FastAPI API]
-    API --> Store[(Research Store)]
-    Store --> Scorer[Credibility Scorer]
-    Store --> Brief[Brief Generator]
-    Brief --> Evidence[Evidence Cards]
-    AgentQueue[Future Agent Queue] --> Search[Search Agent]
-    AgentQueue --> Verify[Verifier Agent]
-    AgentQueue --> Synthesize[Synthesis Agent]
-    Search --> Sources[Source Collection]
-    Verify --> Scorer
-    Synthesize --> Brief
+    Researcher[Researcher] --> API[FastAPI API]
+    API --> Projects[Research Projects]
+    API --> Sources[Source Intake]
+    Sources --> Dedupe[URL + Title Deduplication]
+    Dedupe --> DB[(PostgreSQL / SQLite Tests)]
+    Sources --> Scorer[Credibility Scorer]
+    API --> Review[Source Review Status]
+    Review --> DB
+    DB --> Brief[Deterministic Brief Generator]
+    Scorer --> Evidence[Evidence Cards]
+    Brief --> Evidence
+    FutureAgents[Future Agent Queue] --> Search[Search Agent]
+    FutureAgents --> Verify[Verifier Agent]
+    FutureAgents --> Synthesize[Synthesis Agent]
+    FutureAgents --> Critic[Critic Agent]
 ```
+
+The current implementation keeps search and synthesis deterministic so local development and CI do not depend on external services. PostgreSQL is the intended development and production storage path, while tests run against SQLite-backed sessions.
+
+## What Reviewers Should Notice
+
+- FastAPI service with narrow request/response contracts.
+- SQLAlchemy models for research projects and sources.
+- Alembic migrations for schema evolution.
+- Source deduplication by normalized URL and normalized title within a project.
+- Review workflow that keeps rejected sources for audit history while excluding them from generated evidence.
+- Deterministic credibility scoring with explicit reason strings.
+- Brief generation that prefers verified sources and reports gaps when evidence is weak or unverified.
+- Tests covering API behavior, persistence, deduplication, credibility scoring, and brief generation.
+- Documentation that separates implemented behavior from planned multi-agent orchestration.
 
 ## Features
 
-- FastAPI backend scaffold
-- Health endpoint
-- Research project creation
-- Source collection with title, URL, type, author, publication date, summary, and key claims
-- SQLAlchemy persistence models and Alembic migration for projects and sources
-- Per-project source deduplication by normalized URL or normalized title
-- Source review workflow with `candidate`, `verified`, `rejected`, and `needs_review` statuses
-- Deterministic credibility scoring
-- Evidence cards with source references and scores
-- Cited preliminary brief generation that prioritizes verified sources and excludes rejected sources
-- Research gap detection
-- Docker Compose for PostgreSQL and Redis
-- GitHub Actions CI for Ruff and pytest
-- System design documentation with agent workflow, reliability, and safety notes
+- `GET /health` returns service status and environment.
+- `POST /research/projects` creates a research project from a question.
+- `POST /research/projects/{project_id}/sources` adds or deduplicates a source and returns credibility assessment.
+- `PATCH /research/projects/{project_id}/sources/{source_id}/review` updates source status and reviewer notes.
+- `GET /research/projects/{project_id}/brief` generates a deterministic cited preliminary brief.
+- Docker Compose includes PostgreSQL and Redis for the persistent and queued workflow path.
+- GitHub Actions runs Ruff and pytest.
 
 ## Tech Stack
 
@@ -49,23 +70,40 @@ flowchart LR
 - Pydantic Settings
 - SQLAlchemy
 - Alembic
+- PostgreSQL
+- SQLite for deterministic tests
 - pytest
 - Ruff
-- PostgreSQL
 - Redis planned
-- Optional LLM/search providers planned
+- Optional search and LLM providers planned
+
+## Repository Tour
+
+```text
+app/api/             FastAPI routers for health and research workflows
+app/db/              SQLAlchemy models, sessions, and persistence setup
+app/research/        Domain models, source store, credibility scoring, and brief generation
+alembic/             Database migrations
+docs/                System design and production tradeoffs
+tests/               Unit and API tests
+docker-compose.yml   Local PostgreSQL and Redis services
+```
 
 ## Local Setup
 
+Create an environment file:
+
 ```bash
 cp .env.example .env
+```
+
+Install dependencies:
+
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-uvicorn app.main:app --reload
 ```
-
-The API runs on `http://localhost:8000` by default.
 
 Start local infrastructure once Docker is available:
 
@@ -73,36 +111,39 @@ Start local infrastructure once Docker is available:
 docker compose up -d
 ```
 
-Run migrations after PostgreSQL is available:
+Run migrations:
 
 ```bash
 alembic upgrade head
 ```
 
-Local tests use SQLite so Docker is not required for validation.
+Start the API:
 
-## Environment Variables
+```bash
+uvicorn app.main:app --reload
+```
 
-| Variable | Purpose | Example |
-| --- | --- | --- |
-| `APP_ENV` | Runtime environment label | `local` |
-| `LOG_LEVEL` | Logging verbosity | `INFO` |
-| `RESEARCH_STORE` | Research store selector | `memory` |
-| `LLM_PROVIDER` | Future synthesis provider selector | `mock` |
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql+psycopg://...` |
-| `REDIS_URL` | Redis connection string | `redis://localhost:6382/0` |
+The API runs on `http://localhost:8000` by default.
 
-## API Examples
+Health check:
 
 ```bash
 curl http://localhost:8000/health
 ```
+
+Local tests use SQLite, so Docker is not required for validation.
+
+## Demo Flow
+
+Create a project:
 
 ```bash
 curl -X POST http://localhost:8000/research/projects \
   -H "Content-Type: application/json" \
   -d '{"question":"What makes multi-agent research workflows reliable?"}'
 ```
+
+Add a source:
 
 ```bash
 curl -X POST http://localhost:8000/research/projects/{project_id}/sources \
@@ -121,68 +162,63 @@ curl -X POST http://localhost:8000/research/projects/{project_id}/sources \
   }'
 ```
 
+Submitting the same normalized URL or title again returns the existing source ID with `created: false`.
+
+Review the source:
+
 ```bash
 curl -X PATCH http://localhost:8000/research/projects/{project_id}/sources/{source_id}/review \
   -H "Content-Type: application/json" \
   -d '{
     "status": "verified",
-    "review_note": "Relevant primary source with clear provenance."
+    "review_note": "Relevant source with clear provenance."
   }'
 ```
+
+Generate a preliminary brief:
 
 ```bash
 curl http://localhost:8000/research/projects/{project_id}/brief
 ```
 
+The brief includes answer text, evidence cards, average credibility, and research gaps. Rejected sources stay stored for traceability but do not appear in generated evidence.
+
+## Environment Variables
+
+| Variable | Purpose | Example |
+| --- | --- | --- |
+| `APP_ENV` | Runtime environment label | `local` |
+| `LOG_LEVEL` | Logging verbosity | `INFO` |
+| `DATABASE_URL` | SQLAlchemy database URL | `postgresql+psycopg://...` |
+| `REDIS_URL` | Redis connection string for future queue/cache work | `redis://localhost:6382/0` |
+| `LLM_PROVIDER` | Reserved synthesis provider selector | `mock` |
+
 ## Testing
 
 ```bash
-ruff check .
 pytest
+ruff check .
 ```
 
-## Persistence And Deduplication
+The test suite validates the core workflow without paid model APIs or a running PostgreSQL instance.
 
-Research projects and sources are stored through SQLAlchemy models. The first migration creates `research_projects` and `research_sources` with uniqueness constraints for each project's normalized source URL and normalized source title.
+## Design Notes
 
-When a duplicate source is submitted, the API returns the existing source ID with `created: false` instead of creating a second record. URL normalization lowercases the host, removes fragments, trims trailing slashes, sorts query parameters, and ignores `utm_*` tracking parameters.
+More detail is available in [docs/system-design.md](docs/system-design.md).
 
-## Source Review Workflow
+Key tradeoffs:
 
-Sources start as `candidate` records so search or human intake can save evidence before it is fully reviewed. Reviewers can mark a source as `verified`, `needs_review`, or `rejected` with a short note through the review endpoint.
-
-Brief generation keeps rejected sources out of evidence cards, prefers verified source claims ahead of unreviewed candidates, and reports a gap when no usable sources have been verified yet. This preserves auditability without letting rejected material shape the preliminary answer.
-
-## Future Agent Roles
-
-- **Search Agent:** finds candidate sources for a research question.
-- **Verifier Agent:** checks source freshness, type, author, and claim support, then updates source review status.
-- **Synthesis Agent:** drafts concise answers from evidence cards.
-- **Critic Agent:** identifies weak evidence, missing perspectives, and overclaims.
-- **Citation Agent:** formats final citation bundles and source maps.
-
-## Reliability Considerations
-
-- Briefs should remain reproducible from stored sources and claims.
-- Duplicate submissions should return the existing source instead of creating conflicting evidence.
-- Rejected sources should remain stored for review history but should not appear in generated brief evidence.
-- Agent-generated conclusions should cite evidence cards.
-- Missing publication dates and weak source types should surface as research gaps.
-- Future search/model failures should not corrupt saved source records.
-- Source deduplication should use URL and normalized title.
-
-## Security And Safety
-
-- No secrets are committed; use `.env` locally and managed secrets in CI or hosting.
-- User-uploaded notes or documents should be treated as private by default.
-- Future web search connectors should store fetched source metadata and access timestamps.
-- LLM synthesis should avoid unsupported claims and expose evidence gaps.
-- Research outputs should be labeled as preliminary unless reviewed by a human.
+- Deterministic scoring is less nuanced than human or LLM review, but it makes source ranking reproducible and easy to test.
+- SQLite-backed tests keep CI simple; PostgreSQL remains the target runtime database.
+- Brief generation currently uses stored claims instead of open-ended LLM prose, which prevents unsupported synthesis while the evidence model matures.
+- Rejected sources are retained for auditability, but excluded from generated evidence to avoid contaminating drafts.
+- Multi-agent orchestration is deferred until source intake, review, and evidence generation are stable.
 
 ## Future Improvements
 
-- Search provider abstraction
-- Async agent queue for search, verification, synthesis, critique, and citations
-- LLM synthesis constrained to evidence cards
-- Frontend research board
-- Export to Markdown/PDF with citations
+- Add search provider connectors for source discovery.
+- Add async agent runs for search, verification, synthesis, critique, and citation formatting.
+- Add LLM synthesis constrained to evidence cards.
+- Add a frontend research board for reviewing sources and evidence gaps.
+- Add Markdown/PDF export with citations.
+- Add authentication and workspace-level access controls.
