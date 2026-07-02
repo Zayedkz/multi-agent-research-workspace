@@ -7,7 +7,13 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db_session
 from app.research.brief import DeterministicBriefGenerator
 from app.research.credibility import DeterministicCredibilityScorer
-from app.research.models import CredibilityAssessment, ResearchBrief, ResearchSource, SourceType
+from app.research.models import (
+    CredibilityAssessment,
+    ResearchBrief,
+    ResearchSource,
+    SourceStatus,
+    SourceType,
+)
 from app.research.store import sqlalchemy_research_store
 
 router = APIRouter(prefix="/research", tags=["research"])
@@ -38,7 +44,20 @@ class AddSourceResponse(BaseModel):
     source_id: str
     created: bool
     source_count: int
+    status: SourceStatus
     credibility: CredibilityAssessment
+
+
+class ReviewSourceRequest(BaseModel):
+    status: SourceStatus
+    review_note: str | None = Field(default=None, max_length=1000)
+
+
+class ReviewSourceResponse(BaseModel):
+    project_id: str
+    source_id: str
+    status: SourceStatus
+    review_note: str | None
 
 
 @router.post("/projects", response_model=CreateProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -77,7 +96,39 @@ def add_source(
         source_id=result.source.id,
         created=result.created,
         source_count=len(result.project.sources),
+        status=result.source.status,
         credibility=credibility,
+    )
+
+
+@router.patch(
+    "/projects/{project_id}/sources/{source_id}/review",
+    response_model=ReviewSourceResponse,
+)
+def review_source(
+    project_id: str,
+    source_id: str,
+    request: ReviewSourceRequest,
+    session: Session = DbSession,
+) -> ReviewSourceResponse:
+    source = sqlalchemy_research_store.update_source_status(
+        session,
+        project_id,
+        source_id,
+        request.status,
+        request.review_note,
+    )
+    if source is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="research source not found",
+        )
+
+    return ReviewSourceResponse(
+        project_id=source.project_id,
+        source_id=source.id,
+        status=source.status,
+        review_note=source.review_note,
     )
 
 

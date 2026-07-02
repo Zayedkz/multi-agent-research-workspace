@@ -1,10 +1,11 @@
+from datetime import UTC, datetime
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import ResearchProjectRecord, ResearchSourceRecord
-from app.research.models import ResearchProject, ResearchSource, SourceType
+from app.research.models import ResearchProject, ResearchSource, SourceStatus, SourceType
 
 
 class ResearchStore:
@@ -15,6 +16,15 @@ class ResearchStore:
         raise NotImplementedError
 
     def get(self, project_id: str) -> ResearchProject | None:
+        raise NotImplementedError
+
+    def update_source_status(
+        self,
+        project_id: str,
+        source_id: str,
+        status: SourceStatus,
+        review_note: str | None,
+    ) -> ResearchSource | None:
         raise NotImplementedError
 
     def count(self) -> int:
@@ -51,6 +61,26 @@ class InMemoryResearchStore(ResearchStore):
 
     def get(self, project_id: str) -> ResearchProject | None:
         return self._projects.get(project_id)
+
+    def update_source_status(
+        self,
+        project_id: str,
+        source_id: str,
+        status: SourceStatus,
+        review_note: str | None,
+    ) -> ResearchSource | None:
+        project = self._projects.get(project_id)
+        if project is None:
+            return None
+
+        for source in project.sources:
+            if source.id == source_id:
+                source.status = status
+                source.review_note = review_note
+                source.reviewed_at = utc_now()
+                return source
+
+        return None
 
     def count(self) -> int:
         return len(self._projects)
@@ -109,6 +139,9 @@ class SqlAlchemyResearchStore(ResearchStore):
             published_at=source.published_at,
             summary=source.summary,
             key_claims=source.key_claims,
+            status=source.status.value,
+            review_note=source.review_note,
+            reviewed_at=source.reviewed_at,
             added_at=source.added_at,
         )
         session.add(record)
@@ -129,6 +162,29 @@ class SqlAlchemyResearchStore(ResearchStore):
         if record is None:
             return None
         return project_from_record(record)
+
+    def update_source_status(
+        self,
+        session: Session,
+        project_id: str,
+        source_id: str,
+        status: SourceStatus,
+        review_note: str | None,
+    ) -> ResearchSource | None:
+        record = session.scalar(
+            select(ResearchSourceRecord)
+            .where(ResearchSourceRecord.project_id == project_id)
+            .where(ResearchSourceRecord.id == source_id)
+        )
+        if record is None:
+            return None
+
+        record.status = status.value
+        record.review_note = review_note
+        record.reviewed_at = utc_now()
+        session.commit()
+        session.refresh(record)
+        return source_from_record(record)
 
     def count(self, session: Session) -> int:
         return len(session.scalars(select(ResearchProjectRecord.id)).all())
@@ -154,8 +210,15 @@ def source_from_record(record: ResearchSourceRecord) -> ResearchSource:
         published_at=record.published_at,
         summary=record.summary,
         key_claims=record.key_claims,
+        status=SourceStatus(record.status),
+        review_note=record.review_note,
+        reviewed_at=record.reviewed_at,
         added_at=record.added_at,
     )
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 def normalize_title(title: str) -> str:

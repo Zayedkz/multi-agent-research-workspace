@@ -54,6 +54,9 @@ class ResearchSourceRecord(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     summary: Mapped[str] = mapped_column(Text)
     key_claims: Mapped[list[str]] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(50), default="candidate")
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     project: Mapped[ResearchProjectRecord] = relationship(back_populates="sources")

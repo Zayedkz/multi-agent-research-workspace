@@ -21,8 +21,9 @@
 - Add sources to a project.
 - Deduplicate sources within a project by normalized URL or normalized title.
 - Capture URL, title, source type, author, publication date, summary, and key claims.
+- Review source status as candidate, verified, rejected, or needs_review with a short note.
 - Score source credibility with transparent reasons.
-- Generate a brief with answer text, evidence cards, average credibility, and research gaps.
+- Generate a brief with answer text, evidence cards, average credibility, and research gaps while excluding rejected sources.
 
 ## 4. Non-Functional Requirements
 
@@ -37,7 +38,7 @@
 Initial entities:
 
 - `research_projects`: ID, question, created timestamp.
-- `research_sources`: ID, project ID, title, normalized title, URL, normalized URL, source type, author, publication date, summary, key claims, added timestamp.
+- `research_sources`: ID, project ID, title, normalized title, URL, normalized URL, source type, author, publication date, summary, key claims, review status, review note, reviewed timestamp, added timestamp.
 - `credibility_assessments`: source ID, score, label, reasons, assessed timestamp.
 - `research_briefs`: project ID, answer, evidence cards, gaps, generated timestamp.
 - `agent_runs`: future workflow runs with role, status, attempts, input/output metadata, and timestamps.
@@ -51,6 +52,7 @@ Initial endpoints:
 - `GET /health`: service health and environment.
 - `POST /research/projects`: create a research project.
 - `POST /research/projects/{project_id}/sources`: add or deduplicate a source and return credibility assessment.
+- `PATCH /research/projects/{project_id}/sources/{source_id}/review`: update source review status and reviewer note.
 - `GET /research/projects/{project_id}/brief`: generate a deterministic cited brief.
 
 Planned endpoints:
@@ -63,10 +65,11 @@ Planned endpoints:
 
 1. Search agent proposes candidate sources.
 2. Verifier agent checks source metadata and extracts key claims.
-3. Credibility scorer ranks sources and explains scoring reasons.
-4. Synthesis agent drafts a brief from evidence cards.
-5. Critic agent flags gaps, weak evidence, and overclaims.
-6. Citation agent formats the final source map.
+3. Verifier agent or human reviewer marks each source as verified, rejected, or needing more review.
+4. Credibility scorer ranks usable sources and explains scoring reasons.
+5. Synthesis agent drafts a brief from evidence cards, preferring verified sources and excluding rejected sources.
+6. Critic agent flags gaps, weak evidence, unverified candidates, and overclaims.
+7. Citation agent formats the final source map.
 
 The first implementation covers steps 3 and 4 deterministically and leaves external search/model agents for later.
 
@@ -82,6 +85,7 @@ The first implementation covers steps 3 and 4 deterministically and leaves exter
 
 - Persist source records before launching async verification or synthesis.
 - Deduplicate source submissions before generating credibility assessments.
+- Keep source review updates idempotent and preserve rejected sources for audit history.
 - Make agent runs idempotent by project ID, role, and input hash.
 - Store prompt/model/provider metadata for reproducibility.
 - Keep deterministic fallback scoring available when external providers fail.
@@ -101,6 +105,7 @@ The first implementation covers steps 3 and 4 deterministically and leaves exter
 - Redact private content before external model calls where possible.
 - Label generated briefs as preliminary.
 - Preserve citations and evidence gaps to reduce unsupported conclusions.
+- Exclude rejected sources from generated evidence while retaining review notes for traceability.
 
 ## 12. Tradeoffs
 
@@ -111,7 +116,6 @@ The first implementation covers steps 3 and 4 deterministically and leaves exter
 
 ## 13. Future Improvements
 
-- Project-level source review status.
 - Search provider connectors.
 - Async multi-agent workflow engine.
 - LLM synthesis constrained to evidence cards.
