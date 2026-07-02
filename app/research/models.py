@@ -15,6 +15,13 @@ class SourceType(StrEnum):
     unknown = "unknown"
 
 
+class SourceStatus(StrEnum):
+    candidate = "candidate"
+    verified = "verified"
+    rejected = "rejected"
+    needs_review = "needs_review"
+
+
 class ResearchProject(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     question: str = Field(min_length=1)
@@ -32,6 +39,9 @@ class ResearchSource(BaseModel):
     published_at: datetime | None = None
     summary: str = Field(min_length=1)
     key_claims: list[str] = Field(default_factory=list)
+    status: SourceStatus = SourceStatus.candidate
+    review_note: str | None = None
+    reviewed_at: datetime | None = None
     added_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

@@ -33,9 +33,10 @@ flowchart LR
 - Source collection with title, URL, type, author, publication date, summary, and key claims
 - SQLAlchemy persistence models and Alembic migration for projects and sources
 - Per-project source deduplication by normalized URL or normalized title
+- Source review workflow with `candidate`, `verified`, `rejected`, and `needs_review` statuses
 - Deterministic credibility scoring
 - Evidence cards with source references and scores
-- Cited preliminary brief generation
+- Cited preliminary brief generation that prioritizes verified sources and excludes rejected sources
 - Research gap detection
 - Docker Compose for PostgreSQL and Redis
 - GitHub Actions CI for Ruff and pytest
@@ -121,6 +122,15 @@ curl -X POST http://localhost:8000/research/projects/{project_id}/sources \
 ```
 
 ```bash
+curl -X PATCH http://localhost:8000/research/projects/{project_id}/sources/{source_id}/review \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "verified",
+    "review_note": "Relevant primary source with clear provenance."
+  }'
+```
+
+```bash
 curl http://localhost:8000/research/projects/{project_id}/brief
 ```
 
@@ -137,10 +147,16 @@ Research projects and sources are stored through SQLAlchemy models. The first mi
 
 When a duplicate source is submitted, the API returns the existing source ID with `created: false` instead of creating a second record. URL normalization lowercases the host, removes fragments, trims trailing slashes, sorts query parameters, and ignores `utm_*` tracking parameters.
 
+## Source Review Workflow
+
+Sources start as `candidate` records so search or human intake can save evidence before it is fully reviewed. Reviewers can mark a source as `verified`, `needs_review`, or `rejected` with a short note through the review endpoint.
+
+Brief generation keeps rejected sources out of evidence cards, prefers verified source claims ahead of unreviewed candidates, and reports a gap when no usable sources have been verified yet. This preserves auditability without letting rejected material shape the preliminary answer.
+
 ## Future Agent Roles
 
 - **Search Agent:** finds candidate sources for a research question.
-- **Verifier Agent:** checks source freshness, type, author, and claim support.
+- **Verifier Agent:** checks source freshness, type, author, and claim support, then updates source review status.
 - **Synthesis Agent:** drafts concise answers from evidence cards.
 - **Critic Agent:** identifies weak evidence, missing perspectives, and overclaims.
 - **Citation Agent:** formats final citation bundles and source maps.
@@ -149,6 +165,7 @@ When a duplicate source is submitted, the API returns the existing source ID wit
 
 - Briefs should remain reproducible from stored sources and claims.
 - Duplicate submissions should return the existing source instead of creating conflicting evidence.
+- Rejected sources should remain stored for review history but should not appear in generated brief evidence.
 - Agent-generated conclusions should cite evidence cards.
 - Missing publication dates and weak source types should surface as research gaps.
 - Future search/model failures should not corrupt saved source records.
@@ -164,7 +181,6 @@ When a duplicate source is submitted, the API returns the existing source ID wit
 
 ## Future Improvements
 
-- Project-level source status
 - Search provider abstraction
 - Async agent queue for search, verification, synthesis, critique, and citations
 - LLM synthesis constrained to evidence cards
